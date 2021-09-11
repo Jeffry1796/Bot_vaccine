@@ -16,15 +16,18 @@ import asyncio
 import discord
 
 class scrape_data_website:
-    def __init__ (self, web_chrome,message_chat):
+    def __init__ (self, web_chrome,vaccine_dose,message_chat):
         """Initialization of chrome webdriver
 
         Parameter(s):
         -----------------
         web_chrome = chrome webdriver [format = '']
+        vaccine_dose [format = string]
+        message_chat [format = string]
 
         """
         self.driver = web_chrome
+        self.dose = vaccine_dose
         self.message_parse = message_chat
 
     def open_new_website(self, driver_chrome, url, flag, status=False):
@@ -61,14 +64,32 @@ class scrape_data_website:
                     continue
 
     def scrape_data(self):
+        """This function is used extract all available slot from the initial date up to 10 days from Hang Jabat website.
+
+        Parameter(s):
+        -----------------
+
+        Output:
+        -----------------
+        list_data = dictionary contain with keys = date and value = available hours [format = dictionary]
+        schedule_var = True or False [format = boolean]
+
+        """
         i = 0
         list_data = {}
+        schedule_var = 1
         iteration_loop = 10
 
         datetime_object = datetime.strptime(self.message_parse, "%Y-%m-%d")
 
         while i < iteration_loop:
-            main_driver, status_connection = self.open_new_website(self.driver, 'https://widget.loket.com/widget/hangjebatvaksin2/', "//*[@id='main']/div[2]/div[3]//input[@value='Submit']")
+            url_hang_jabat = ''
+            if self.dose == '!vaksin_1':
+                url_hang_jabat = 'https://widget.loket.com/widget/3kdkolxwjs53u4fh/'
+            else:
+                url_hang_jabat = 'https://widget.loket.com/widget/hangjebatvaksin2/'
+
+            main_driver, status_connection = self.open_new_website(self.driver, url_hang_jabat, "//*[@id='main']/div[2]/div[3]//input[@value='Submit']")
             if status_connection:
                 date_string = datetime_object+relativedelta(days=i)
 
@@ -87,6 +108,7 @@ class scrape_data_website:
                 try:
                     main_driver.find_element_by_xpath('//*[@id="main"]/div[2]/div[@class="alert alert--red"]')
                     print('No vaccination on this date. Please contact Kemenkes (119) for the detail')
+                    schedule_var = 0
                     break
                 except:
                     pass
@@ -116,12 +138,17 @@ class scrape_data_website:
                 pass
 
         self.driver.quit()
-        return list_data
+        return (list_data,schedule_var)
 
 class MyClient(discord.Client):
+    """This function is to control Discord bot
+
+    """
 
     async def on_ready(self):
-        print(f'{client.user} has connected to Discord!')
+        response_ready = f"Bot is online. Send '!help' for the list of command. This bot will find available slots up to 10 days from your initial date"
+        await client.get_channel(id=761179509763473408).send(response_ready)
+        # print(f'{client.user} has connected to Discord!')
 
     async def on_message(self,message):
         username = str(message.author).split('#')[0]
@@ -130,8 +157,8 @@ class MyClient(discord.Client):
         if message.author == client.user:
             return
 
-        if message_chat.lower() == '!vaksin_2':
-            response = f"Hai {username}, kapan anda mau vaksinasi? (Masukkan tanggal estimasi anda. Misal: 2021-10-05)"
+        if message_chat.lower() == '!vaksin_2' or message_chat.lower() == '!vaksin_1':
+            response = f"Hi {username}, when do you plan to get vaccination? (Please enter the date using this format e.g 2021-10-05)"
             await message.channel.send(response)
 
             try:
@@ -141,54 +168,75 @@ class MyClient(discord.Client):
                 # CHECK DATE format
                 datetime.strptime(message_response_date, "%Y-%m-%d")
 
-                response = f"Anda rencana vaksin tanggal {message_response_date}. Akan bot carikan slotnya"
+                vaccination = ''
+                if message_chat.lower() == '!vaksin_1':
+                    vaccination = 'first dose'
+                else:
+                    vaccination = 'second dose'
+
+                response = f"You plan to do vacctionation at {message_response_date}. The bot will find the available slots"
                 await message.channel.send(response)
 
-                # chrome_options = webdriver.ChromeOptions()
-                # chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN")
-                # chrome_options.add_argument('--headless')
-                # chrome_options.add_argument('--no-sandbox')
-                # chrome_options.add_argument('--disable-dev-shm-usage')
-                # chrome_options.add_argument("--window-size=1920x1080")
-                # chrome_options.add_argument("--disable-notifications")
-                # chrome_options.add_argument("--disable-gpu")
-                # chrome_options.add_argument("--start-maximized")
-                # chrome_options.add_experimental_option("useAutomationExtension", False)
-                # chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                # driver_web = webdriver.Chrome(executable_path=os.environ.get('CHROMEDRIVER_PATH'), options=chrome_options)
-                # list_scrape_result = scrape_data_website(driver_web,message_response_date).scrape_data()
+                chrome_options = webdriver.ChromeOptions()
+                chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN")
+                chrome_options.add_argument('--headless')
+                chrome_options.add_argument('--no-sandbox')
+                chrome_options.add_argument('--disable-dev-shm-usage')
+                chrome_options.add_argument("--window-size=1920x1080")
+                chrome_options.add_argument("--disable-notifications")
+                chrome_options.add_argument("--disable-gpu")
+                chrome_options.add_argument("--start-maximized")
+                chrome_options.add_experimental_option("useAutomationExtension", False)
+                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                driver_web = webdriver.Chrome(executable_path=os.environ.get('CHROMEDRIVER_PATH'), options=chrome_options)
+                list_scrape_result,status = scrape_data_website(driver_web,message_chat.lower(),message_response_date).scrape_data()
 
-                # str_response = ''
-                # if len(list_scrape_result) == 0:
-                #     response_vacc = f"Vaksinasi dari tanggal {message_response_date} sampai 10 hari ke depan sudah penuh"
-                #     await message.channel.send(response_vacc)
-                # else:
-                #     for date in list_scrape_result.keys():
-                #         if len(list_scrape_result[date]) == 0:
-                #             str_response = str_response + 'Slot sudah penuh untuk hari ini'
-                #         else:
-                #             str_response = str_response + 'Ada ' + str(len(list_scrape_result[date])) + ' slot di tanggal ' + date + ' : ' + ', '.join(list_scrape_result[date]) + '\n'
+                str_response,response_vacc = '',''
+                if status == 0:
 
-                #     response_vacc = f"Berikut hasil pencarian bot dari situs Hang Jabat sampai 10 hari kedepan 😁\n{str_response}"
-                #     await message.channel.send(response_vacc)
+                    if len(list_scrape_result) == 0:
+
+                        response_vacc = f"No vaccination schedule at {message_response_date} for the {vaccination}. Please contact Kemenkes (119) for the detail"
+                        await message.channel.send(response_vacc)
+
+                    else:
+
+                        for date in list_scrape_result.keys():
+                            if len(list_scrape_result[date]) == 0:
+                                str_response = str_response + 'There are no slots available at ' + date + '\n'
+                            else:
+                                str_response = str_response + 'There is/are ' + str(len(list_scrape_result[date])) + ' slots at ' + date + ' : ' + ', '.join(list_scrape_result[date]) + '\n'
+
+                        response_vacc = f"There is only {len(list_scrape_result)} scheduled dates from your initial date. Here is the available slots for the {vaccination} from Hang Jabat website 😁\n{str_response}"
+                        await message.channel.send(response_vacc)
+
+                else:
+
+                    for date in list_scrape_result.keys():
+                        if len(list_scrape_result[date]) == 0:
+                            str_response = str_response + 'There are no slots available at ' + date
+                        else:
+                            str_response = str_response + 'There is/are ' + str(len(list_scrape_result[date])) + ' slots at ' + date + ' : ' + ', '.join(list_scrape_result[date]) + '\n'
+
+                    response_vacc = f"Here is the available slots for the {vaccination} from Hang Jabat website until 10 days later 😁\n{str_response}"
+                    await message.channel.send(response_vacc)
 
             except asyncio.TimeoutError:
-                response = f"{username} silahkan mencari ulang"
+                response = f"Hi {username}, please register again to find available slots"
                 await message.channel.send(response)
 
             except ValueError:
-                response = f"Format tanggal yang {username} masukkan salah"
+                response = f"Hi {username}, your date format is wrong"
                 await message.channel.send(response)
 
-            # msg = await bot.wait_for("message", check=check)
+        # msg = await bot.wait_for("message", check=check)
         elif message_chat.lower() == '!help':
-            response = \
+            response_help = \
             f"""
-            Hi {username}, silahkan pilih command yang dibutuhkan: \n1. !vaksin_1 (untuk vaksin pertama) \n2. !vaksin_2 (untuk vaksin kedua)
+            Hi {username}, here is some command in this bot: \n1. !vaksin_1 (for first dose vacctionation) \n2. !vaksin_2 (for second dose vaccination)
             """
 
-            await message.channel.send(response)
-            return
+            await message.channel.send(response_help)
 
 TOKEN = os.environ.get('TOKEN')
 client = MyClient()
