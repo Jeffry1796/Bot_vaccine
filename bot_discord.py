@@ -196,12 +196,13 @@ class MyClient(discord.Client):
             driver_web = webdriver.Chrome(executable_path=os.environ.get('CHROMEDRIVER_PATH'), options=chrome_options)
             list_scrape_result,status = scrape_data_website(driver_web,dose,date).scrape_data()
 
+            dose_str = ''
             if dose == 'first' or dose == '1':
-                dose = 'first dose'
+                dose_str = 'first dose'
             else:
-                dose = 'second dose'
+                dose_str = 'second dose'
 
-            task_response = client.loop.create_task(self.create_response(message,list_scrape_result,status,date,dose))
+            task_response = client.loop.create_task(self.create_response(message,list_scrape_result,status,date,dose_str))
             await asyncio.sleep(7)
             task_response.cancel()
 
