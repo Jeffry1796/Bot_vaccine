@@ -9,6 +9,7 @@ Currently, I am using Heroku platform. To deploy it:
 ## Buildpack
 - https://github.com/heroku/heroku-buildpack-google-chrome for google chrome
 - https://github.com/heroku/heroku-buildpack-chromedriver for chromedriver
+- TOKEN. Your discord channel token
 
 ## Configuration Variables
 - CHROMEDRIVER_PATH = /app/.chromedriver/bin/chromedriver
