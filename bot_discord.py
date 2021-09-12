@@ -10,6 +10,7 @@ import requests
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import re
+from discord.ext import tasks
 
 import os
 import asyncio
@@ -63,7 +64,7 @@ class scrape_data_website:
                     retry_connection += 1
                     continue
 
-    def scrape_data(self):
+    def scrape_data(self, iteration_loop = 10):
         """This function is used extract all available slot from the initial date up to 10 days from Hang Jabat website.
 
         Parameter(s):
@@ -78,13 +79,12 @@ class scrape_data_website:
         i = 0
         list_data = {}
         schedule_var = 1
-        iteration_loop = 10
 
         datetime_object = datetime.strptime(self.message_parse, "%Y-%m-%d")
 
         while i < iteration_loop:
             url_hang_jabat = ''
-            if self.dose == '!vaksin_1':
+            if self.dose == '!vaksin_1' or self.dose == 'first' or self.dose == '1':
                 url_hang_jabat = 'https://widget.loket.com/widget/3kdkolxwjs53u4fh/'
             else:
                 url_hang_jabat = 'https://widget.loket.com/widget/hangjebatvaksin2/'
@@ -107,7 +107,7 @@ class scrape_data_website:
                 # IF NO VACCINATION SCHEDULE
                 try:
                     main_driver.find_element_by_xpath('//*[@id="main"]/div[2]/div[@class="alert alert--red"]')
-                    print('No vaccination on this date. Please contact Kemenkes (119) for the detail')
+                    # print('No vaccination on this date. Please contact Kemenkes (119) for the detail')
                     schedule_var = 0
                     break
                 except:
@@ -140,15 +140,77 @@ class scrape_data_website:
         self.driver.quit()
         return (list_data,schedule_var)
 
+class DoseNotCorrect(Exception):
+    pass
+
 class MyClient(discord.Client):
     """This function is to control Discord bot
 
     """
 
+    async def create_response(self,message,list_scrape_result,status,message_response_date,vaccination):
+        str_response,response_vacc = '',''
+        if status == 0:
+
+            if len(list_scrape_result) == 0:
+
+                response_vacc = f"No vaccination schedule at {message_response_date} for the {vaccination}. Please contact Kemenkes (119) for the detail"
+                await message.channel.send(response_vacc)
+
+            else:
+
+                for date in list_scrape_result.keys():
+                    if len(list_scrape_result[date]) == 0:
+                        str_response = str_response + 'There are no slots available at ' + date + '\n'
+                    else:
+                        str_response = str_response + 'There is/are ' + str(len(list_scrape_result[date])) + ' slots at ' + date + ' : ' + ', '.join(list_scrape_result[date]) + '\n'
+
+                response_vacc = f"There is only {len(list_scrape_result)} scheduled dates from your initial date. Here is the available slots for the {vaccination} from Hang Jabat website 😁\n{str_response}"
+                await message.channel.send(response_vacc)
+
+        else:
+
+            for date in list_scrape_result.keys():
+                if len(list_scrape_result[date]) == 0:
+                    str_response = str_response + 'There are no slots available at ' + date
+                else:
+                    str_response = str_response + 'There is/are ' + str(len(list_scrape_result[date])) + ' slots at ' + date + ' : ' + ', '.join(list_scrape_result[date]) + '\n'
+
+            response_vacc = f"Here is the available slots for the {vaccination} from Hang Jabat website until 10 days later 😁\n{str_response}"
+            await message.channel.send(response_vacc)
+
+    async def background_task(self, username, message, date, dose):
+
+        while True:
+            chrome_options = webdriver.ChromeOptions()
+            chrome_options.binary_location = os.environ.get("GOOGLE_CHROME_BIN")
+            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument("--window-size=1920x1080")
+            chrome_options.add_argument("--disable-notifications")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--start-maximized")
+            chrome_options.add_experimental_option("useAutomationExtension", False)
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            driver_web = webdriver.Chrome(executable_path=os.environ.get('CHROMEDRIVER_PATH'), options=chrome_options)
+            list_scrape_result,status = scrape_data_website(driver_web,dose,date).scrape_data()
+
+            if dose == 'first' or dose == '1':
+                dose = 'first dose'
+            else:
+                dose = 'second dose'
+
+            task_response = client.loop.create_task(self.create_response(message,list_scrape_result,status,date,dose))
+            await asyncio.sleep(7)
+            task_response.cancel()
+
+            await asyncio.sleep(900)
+
     async def on_ready(self):
         response_ready = f"Bot is online. Send '!help' for the list of command. This bot will find available slots up to 10 days from your initial date"
+        self.status_schedule = True
         await client.get_channel(id=761179509763473408).send(response_ready)
-        # print(f'{client.user} has connected to Discord!')
 
     async def on_message(self,message):
         username = str(message.author).split('#')[0]
@@ -191,35 +253,9 @@ class MyClient(discord.Client):
                 driver_web = webdriver.Chrome(executable_path=os.environ.get('CHROMEDRIVER_PATH'), options=chrome_options)
                 list_scrape_result,status = scrape_data_website(driver_web,message_chat.lower(),message_response_date).scrape_data()
 
-                str_response,response_vacc = '',''
-                if status == 0:
-
-                    if len(list_scrape_result) == 0:
-
-                        response_vacc = f"No vaccination schedule at {message_response_date} for the {vaccination}. Please contact Kemenkes (119) for the detail"
-                        await message.channel.send(response_vacc)
-
-                    else:
-
-                        for date in list_scrape_result.keys():
-                            if len(list_scrape_result[date]) == 0:
-                                str_response = str_response + 'There are no slots available at ' + date + '\n'
-                            else:
-                                str_response = str_response + 'There is/are ' + str(len(list_scrape_result[date])) + ' slots at ' + date + ' : ' + ', '.join(list_scrape_result[date]) + '\n'
-
-                        response_vacc = f"There is only {len(list_scrape_result)} scheduled dates from your initial date. Here is the available slots for the {vaccination} from Hang Jabat website 😁\n{str_response}"
-                        await message.channel.send(response_vacc)
-
-                else:
-
-                    for date in list_scrape_result.keys():
-                        if len(list_scrape_result[date]) == 0:
-                            str_response = str_response + 'There are no slots available at ' + date
-                        else:
-                            str_response = str_response + 'There is/are ' + str(len(list_scrape_result[date])) + ' slots at ' + date + ' : ' + ', '.join(list_scrape_result[date]) + '\n'
-
-                    response_vacc = f"Here is the available slots for the {vaccination} from Hang Jabat website until 10 days later 😁\n{str_response}"
-                    await message.channel.send(response_vacc)
+                task_response = client.loop.create_task(self.create_response(message,list_scrape_result,status,message_response_date,vaccination))
+                await asyncio.sleep(7)
+                task_response.cancel()
 
             except asyncio.TimeoutError:
                 response = f"Hi {username}, please register again to find available slots"
@@ -229,11 +265,61 @@ class MyClient(discord.Client):
                 response = f"Hi {username}, your date format is wrong"
                 await message.channel.send(response)
 
-        # msg = await bot.wait_for("message", check=check)
+        elif message_chat.lower() == '!enable_schedule':
+            try:
+                response = f"Hi {username}, first or second dose?"
+                await message.channel.send(response)
+
+                message_response = await client.wait_for("message", check=lambda x:x.content, timeout=20.0)
+                message_response_dose = message_response.content.lower()
+
+                message_response_date = datetime.now().strftime('%Y-%m-%d')
+
+                if ('first' in message_response_dose or message_response_dose == '1') and self.status_schedule:
+
+                    response = f"Scheduler for the first dose has been enabled. You will be informed every 15 minutes"
+                    await message.channel.send(response)
+
+                    self.status_schedule = False
+
+                    self.task = client.loop.create_task(self.background_task(username,message,message_response_date,message_response_dose))
+
+                elif ('second' in message_response_dose or message_response_dose == '2') and self.status_schedule:
+
+                    response = f"Scheduler for the second dose has been enabled. You will be informed every 15 minutes"
+                    await message.channel.send(response)
+
+                    self.status_schedule = False
+
+                    self.task = client.loop.create_task(self.background_task(username,message,message_response_date,message_response_dose))
+                elif self.status_schedule == False:
+                    response = f"Please stop your current scheduler to activate it"
+                    await message.channel.send(response)
+                else:
+                    raise DoseNotCorrect
+
+            except asyncio.TimeoutError:
+                response = f"Hi {username}, please register again to find available slots"
+                await message.channel.send(response)
+
+            except DoseNotCorrect:
+                response = f"Hi {username}, there is no such dose. Please register again"
+                await message.channel.send(response)
+
+        elif message_chat.lower() == '!disable_schedule':
+            try:
+                self.task.cancel()
+                self.status_schedule = True
+                response = f"Hi {username}, scheduler will be disabled"
+                await message.channel.send(response)
+            except AttributeError:
+                response = f"Please enable the scheduler first"
+                await message.channel.send(response)
+
         elif message_chat.lower() == '!help':
             response_help = \
             f"""
-            Hi {username}, here is some command in this bot: \n1. !vaksin_1 (for first dose vacctionation) \n2. !vaksin_2 (for second dose vaccination)
+            Hi {username}, here is some command in this bot: \n1. !vaksin_1 (for first dose vacctionation) \n2. !vaksin_2 (for second dose vaccination) \n3. !enable_schedule \n4. !disable_schedule
             """
 
             await message.channel.send(response_help)
